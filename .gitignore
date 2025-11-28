@@ -1,0 +1,50 @@
+# Visual Studio
+.vs
+.user
+.suo
+.userosscache
+.sln.docstates
+
+# Build results
+bin
+obj
+out
+Debug
+Release
+
+# Rider  JetBrains
+.idea
+.sln.iml
+
+# VS Code
+.vscode
+
+# NuGet
+packages
+.nupkg
+.snupkg
+
+# Selenium Drivers (automatically restored)
+chromedriver.exe
+chromedriver
+geckodriver.exe
+msedgedriver.exe
+
+# Dotnet stuff
+.dll
+.pdb
+.exe
+.cache
+TestResults
+.db
+.opendb
+
+# Logs
+.log
+
+# Temporary
+.tmp
+.temp
+.bak
+.swp
+.swo
