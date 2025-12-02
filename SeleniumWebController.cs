@@ -1,5 +1,7 @@
 ﻿using System.Text;
 using System.Threading.Tasks;
+using System.Linq;
+using System.IO;
 using OpenQA.Selenium;
 using OpenQA.Selenium.Support.UI;
 
@@ -19,13 +21,81 @@ public class SeleniumWebController : IWebController
     public Task ClickAsync(string cssSelector)
     {
         var element = _wait.Until(d => d.FindElement(By.CssSelector(cssSelector)));
-        element.Click();
+
+        // Capture window handles before click
+        var beforeHandles = _driver.WindowHandles.ToList();
+
+        try
+        {
+            element.Click();
+        }
+        catch
+        {
+            // Fallback to JS click if normal click fails
+            try
+            {
+                ((IJavaScriptExecutor)_driver).ExecuteScript("arguments[0].click();", element);
+            }
+            catch { }
+        }
+
+        // If a new window/tab opened, switch to it
+        try
+        {
+            var waitNew = new WebDriverWait(new SystemClock(), _driver, TimeSpan.FromSeconds(5), TimeSpan.FromMilliseconds(200));
+            waitNew.Until(d => d.WindowHandles.Count > beforeHandles.Count);
+            var newHandles = _driver.WindowHandles.Except(beforeHandles).ToList();
+            if (newHandles.Count > 0)
+            {
+                _driver.SwitchTo().Window(newHandles[0]);
+                // wait for page load (null-safe)
+                waitNew.Until(d =>
+                {
+                    var state = ((IJavaScriptExecutor)d).ExecuteScript("return document.readyState");
+                    return state != null && state.ToString() == "complete";
+                });
+            }
+        }
+        catch { }
+
         return Task.CompletedTask;
     }
 
     public Task ClickAsync(IWebElement element)
     {
-        element.Click();
+        // capture window handles before click
+        var beforeHandles = _driver.WindowHandles.ToList();
+
+        try
+        {
+            element.Click();
+        }
+        catch
+        {
+            try
+            {
+                ((IJavaScriptExecutor)_driver).ExecuteScript("arguments[0].click();", element);
+            }
+            catch { }
+        }
+
+        try
+        {
+            var waitNew = new WebDriverWait(new SystemClock(), _driver, TimeSpan.FromSeconds(5), TimeSpan.FromMilliseconds(200));
+            waitNew.Until(d => d.WindowHandles.Count > beforeHandles.Count);
+            var newHandles = _driver.WindowHandles.Except(beforeHandles).ToList();
+            if (newHandles.Count > 0)
+            {
+                _driver.SwitchTo().Window(newHandles[0]);
+                waitNew.Until(d =>
+                {
+                    var state = ((IJavaScriptExecutor)d).ExecuteScript("return document.readyState");
+                    return state != null && state.ToString() == "complete";
+                });
+            }
+        }
+        catch { }
+
         return Task.CompletedTask;
     }
     public async Task DragAndDropAsync(string sourceSelector, string targetSelector)
@@ -64,7 +134,9 @@ public class SeleniumWebController : IWebController
                 var id = input.GetAttribute("id") ?? "(no id)";
                 var placeholder = input.GetAttribute("placeholder") ?? "";
                 var type = input.GetAttribute("type") ?? "text";
-                sb.AppendLine($"  [Input] name='{name}' id='{id}' type='{type}' placeholder='{placeholder}'");
+                var value = input.GetAttribute("value") ?? "";
+                var displayValue = value.Length > 80 ? value.Substring(0, 80) + "..." : value;
+                sb.AppendLine($"  [Input] name='{name}' id='{id}' type='{type}' placeholder='{placeholder}' value='{displayValue}'");
             }
             catch { }
         }
@@ -165,8 +237,72 @@ public class SeleniumWebController : IWebController
         
         try
         {
-            var element = _driver.FindElement(By.CssSelector(cssSelector));
-            Console.WriteLine($"[SeleniumWebController] Element found: {element.GetAttribute("name")} = {element.GetAttribute("id")}");
+            IWebElement? element = null;
+            // Try to find element in current document with wait
+            try
+            {
+                element = _wait.Until(d =>
+                {
+                    try
+                    {
+                        var e = d.FindElement(By.CssSelector(cssSelector));
+                        return (e.Displayed || e.Enabled) ? e : null;
+                    }
+                    catch
+                    {
+                        return null;
+                    }
+                });
+
+                if (element != null)
+                    Console.WriteLine($"[SeleniumWebController] Element found in main document: {element.GetAttribute("name")} = {element.GetAttribute("id")}");
+            }
+            catch
+            {
+                // ignore - we'll try frames next
+            }
+
+            // If not found in main document, try inside iframes (use short waits)
+            if (element == null)
+            {
+                var frames = _driver.FindElements(By.TagName("iframe"));
+                foreach (var frame in frames)
+                {
+                    try
+                    {
+                        _driver.SwitchTo().Frame(frame);
+                        element = _wait.Until(d =>
+                        {
+                            try
+                            {
+                                var e = d.FindElement(By.CssSelector(cssSelector));
+                                return (e.Displayed || e.Enabled) ? e : null;
+                            }
+                            catch { return null; }
+                        });
+
+                        if (element != null)
+                        {
+                            Console.WriteLine($"[SeleniumWebController] Element found inside iframe: {element.GetAttribute("name")} = {element.GetAttribute("id")}");
+                            // keep driver inside this frame for subsequent interactions
+                            break;
+                        }
+                        else
+                        {
+                            _driver.SwitchTo().DefaultContent();
+                        }
+                    }
+                    catch
+                    {
+                        try { _driver.SwitchTo().DefaultContent(); } catch { }
+                    }
+                }
+            }
+
+            if (element == null)
+            {
+                throw new Exception($"Element not found for selector: {cssSelector}");
+            }
 
             // 특수 키(예: Enter)인 경우 바로 전송
             if (text == Keys.Enter)
@@ -248,24 +384,103 @@ public class SeleniumWebController : IWebController
                 Console.WriteLine($"[SeleniumWebController] Actions failed, trying JS fallback");
             }
 
-            // Final fallback: set value via JavaScript and dispatch input/change events (React-friendly)
+            // Final fallback: set value via JavaScript and dispatch a richer set of events (React/Vue friendly)
             try
             {
                 Console.WriteLine($"[SeleniumWebController] Using JS fallback to input text.");
+
                 var script = @"
                     (function(el, val) {
-                        el.focus();
+                        try {
+                            el.focus();
+                        } catch(e) {}
                         var lastValue = el.value;
                         el.value = val;
-                        var tracker = el._valueTracker;
-                        if (tracker) tracker.setValue(lastValue);
-                        el.dispatchEvent(new Event('input', {bubbles:true}));
-                        el.dispatchEvent(new Event('change', {bubbles:true}));
-                        el.dispatchEvent(new KeyboardEvent('keyup', {bubbles:true}));
+                        // react value tracker hack
+                        try {
+                            var tracker = el._valueTracker || (Object.getOwnPropertyNames(el).find(function(k){return k.indexOf('_valueTracker')>=0})? el._valueTracker : null);
+                            if (tracker && tracker.setValue) tracker.setValue(lastValue);
+                        } catch(e) {}
+
+                        var evts = ['keydown','keypress','input','keyup','change','blur'];
+                        evts.forEach(function(n){
+                            try { el.dispatchEvent(new Event(n, {bubbles:true})); } catch(e) {}
+                        });
+
+                        try { el.dispatchEvent(new KeyboardEvent('keyup', {bubbles:true})); } catch(e) {}
+                        return el.value;
                     })
                 ";
-                ((IJavaScriptExecutor)_driver).ExecuteScript(script, element, text);
-                System.Threading.Thread.Sleep(100);
+
+                // Try up to 3 times and validate the value was actually set
+                var success = false;
+                for (int attempt = 1; attempt <= 3; attempt++)
+                {
+                    try
+                    {
+                        var result = ((IJavaScriptExecutor)_driver).ExecuteScript(script, element, text);
+                        var setVal = result == null ? "" : result.ToString();
+                        Console.WriteLine($"[SeleniumWebController] JS set attempt {attempt}, readback='{setVal}'");
+                        if (setVal == text)
+                        {
+                            success = true;
+                            break;
+                        }
+                    }
+                    catch (Exception jsEx)
+                    {
+                        Console.WriteLine($"[SeleniumWebController] JS attempt {attempt} failed: {jsEx.Message}");
+                    }
+
+                    System.Threading.Thread.Sleep(150);
+                }
+
+                if (!success)
+                {
+                    // Save diagnostics: screenshot + element outerHTML
+                    try
+                    {
+                        var outDir = Path.Combine(Directory.GetCurrentDirectory(), "ToolOutput");
+                        Directory.CreateDirectory(outDir);
+                        var id = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss") + "_" + Guid.NewGuid().ToString("N").Substring(0,8);
+                        // screenshot
+                        try
+                        {
+                            var screenshot = ((ITakesScreenshot)_driver).GetScreenshot();
+                            var pngPath = Path.Combine(outDir, $"input_fail_{id}.png");
+                            File.WriteAllBytes(pngPath, screenshot.AsByteArray);
+                            Console.WriteLine($"[SeleniumWebController] Saved screenshot: {pngPath}");
+                        }
+                        catch (Exception scEx)
+                        {
+                            Console.WriteLine($"[SeleniumWebController] Screenshot failed: {scEx.Message}");
+                        }
+
+                        // element outerHTML
+                        try
+                        {
+                            var outer = ((IJavaScriptExecutor)_driver).ExecuteScript("return arguments[0].outerHTML;", element);
+                            var html = outer == null ? "" : outer.ToString();
+                            var htmlPath = Path.Combine(outDir, $"input_fail_{id}.html");
+                            File.WriteAllText(htmlPath, html);
+                            Console.WriteLine($"[SeleniumWebController] Saved element HTML: {htmlPath}");
+                        }
+                        catch (Exception htmlEx)
+                        {
+                            Console.WriteLine($"[SeleniumWebController] Dump HTML failed: {htmlEx.Message}");
+                        }
+                    }
+                    catch (Exception ex2)
+                    {
+                        Console.WriteLine($"[SeleniumWebController] Diagnostic save failed: {ex2.Message}");
+                    }
+
+                    throw new Exception($"Failed to input text into '{cssSelector}' after JS fallback (last readback did not match). Try a different selector or send Enter if appropriate.");
+                }
+
+                // if success, ensure we leave main document context to be safe
+                try { _driver.SwitchTo().DefaultContent(); } catch { }
+
                 Console.WriteLine($"[SeleniumWebController] JS fallback completed.");
                 return Task.CompletedTask;
             }
@@ -350,6 +565,177 @@ public class SeleniumWebController : IWebController
         catch (Exception ex)
         {
             Console.WriteLine($"[SeleniumWebController.MoveMouseToElementAsync] Error: {ex.Message}");
+            throw;
+        }
+    }
+
+    public Task ScrollAsync(string arguments)
+    {
+        Console.WriteLine($"[SeleniumWebController.ScrollAsync] args='{arguments}'");
+        try
+        {
+            var q = (arguments ?? "").Trim();
+
+            // selector: scroll element into view
+            if (q.StartsWith("selector:", StringComparison.OrdinalIgnoreCase))
+            {
+                var selector = q.Substring(9).Trim();
+                try
+                {
+                    var el = _driver.FindElement(By.CssSelector(selector));
+                    ((IJavaScriptExecutor)_driver).ExecuteScript("arguments[0].scrollIntoView({block:'center', inline:'center'});", el);
+                    return Task.CompletedTask;
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[SeleniumWebController.ScrollAsync] selector scroll failed: {ex.Message}");
+                    throw;
+                }
+            }
+
+            // by:dx|dy -> scrollBy
+            if (q.StartsWith("by:", StringComparison.OrdinalIgnoreCase) || (q.Contains("x:") && q.Contains("y:")))
+            {
+                int dx = 0, dy = 0;
+                // support by:dx|dy or x:100|y:200
+                var parts = q.StartsWith("by:", StringComparison.OrdinalIgnoreCase) ? q.Substring(3).Split('|') : q.Split('|');
+                foreach (var p in parts)
+                {
+                    var t = p.Trim();
+                    if (t.StartsWith("x:", StringComparison.OrdinalIgnoreCase))
+                    {
+                        int.TryParse(t.Substring(2), out dx);
+                    }
+                    else if (t.StartsWith("y:", StringComparison.OrdinalIgnoreCase))
+                    {
+                        int.TryParse(t.Substring(2), out dy);
+                    }
+                    else
+                    {
+                        // if format is like "0" or "100"
+                        int v;
+                        if (int.TryParse(t, out v)) dy = v;
+                    }
+                }
+
+                ((IJavaScriptExecutor)_driver).ExecuteScript($"window.scrollBy({dx}, {dy});");
+                return Task.CompletedTask;
+            }
+
+            // to:top / to:bottom
+            if (q.Equals("to:top", StringComparison.OrdinalIgnoreCase))
+            {
+                ((IJavaScriptExecutor)_driver).ExecuteScript("window.scrollTo(0,0);");
+                return Task.CompletedTask;
+            }
+
+            if (q.Equals("to:bottom", StringComparison.OrdinalIgnoreCase))
+            {
+                ((IJavaScriptExecutor)_driver).ExecuteScript("window.scrollTo(0, document.body.scrollHeight || document.documentElement.scrollHeight);");
+                return Task.CompletedTask;
+            }
+
+            // fallback: try parse single integer -> scrollBy 0,amount
+            if (int.TryParse(q, out var amount))
+            {
+                ((IJavaScriptExecutor)_driver).ExecuteScript($"window.scrollBy(0, {amount});");
+                return Task.CompletedTask;
+            }
+
+            // unknown args
+            Console.WriteLine("[SeleniumWebController.ScrollAsync] Unknown arguments, no action taken.");
+            return Task.CompletedTask;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[SeleniumWebController.ScrollAsync] Error: {ex.Message}");
+            throw;
+        }
+    }
+
+    public Task GoBackAsync()
+    {
+        Console.WriteLine("[SeleniumWebController.GoBackAsync] Navigating back");
+        try
+        {
+            _driver.Navigate().Back();
+            // wait for ready state
+                try
+            {
+                var wait = new WebDriverWait(new SystemClock(), _driver, TimeSpan.FromSeconds(5), TimeSpan.FromMilliseconds(200));
+                wait.Until(d =>
+                {
+                    var state = ((IJavaScriptExecutor)d).ExecuteScript("return document.readyState");
+                    return state != null && state.ToString() == "complete";
+                });
+            }
+            catch { }
+            return Task.CompletedTask;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[SeleniumWebController.GoBackAsync] Error: {ex.Message}");
+            throw;
+        }
+    }
+
+    public Task GoForwardAsync()
+    {
+        Console.WriteLine("[SeleniumWebController.GoForwardAsync] Navigating forward");
+        try
+        {
+            _driver.Navigate().Forward();
+            try
+            {
+                var wait = new WebDriverWait(new SystemClock(), _driver, TimeSpan.FromSeconds(5), TimeSpan.FromMilliseconds(200));
+                wait.Until(d =>
+                {
+                    var state = ((IJavaScriptExecutor)d).ExecuteScript("return document.readyState");
+                    return state != null && state.ToString() == "complete";
+                });
+            }
+            catch { }
+            return Task.CompletedTask;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[SeleniumWebController.GoForwardAsync] Error: {ex.Message}");
+            throw;
+        }
+    }
+
+    public Task CloseCurrentTabAsync()
+    {
+        Console.WriteLine("[SeleniumWebController.CloseCurrentTabAsync] Closing current tab/window");
+        try
+        {
+            var handles = _driver.WindowHandles.ToList();
+            var current = _driver.CurrentWindowHandle;
+
+            // Close current window
+            _driver.Close();
+
+            // If other handles exist, switch to the last one (or first available)
+            try
+            {
+                var remaining = _driver.WindowHandles.ToList();
+                if (remaining.Count > 0)
+                {
+                    // prefer the last handle in list
+                    var toSwitch = remaining.Last();
+                    _driver.SwitchTo().Window(toSwitch);
+                }
+            }
+            catch (Exception swEx)
+            {
+                Console.WriteLine($"[SeleniumWebController.CloseCurrentTabAsync] Switch after close failed: {swEx.Message}");
+            }
+
+            return Task.CompletedTask;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[SeleniumWebController.CloseCurrentTabAsync] Error: {ex.Message}");
             throw;
         }
     }

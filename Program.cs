@@ -15,7 +15,7 @@ class Program
         using IWebDriver driver = new ChromeDriver(chromeOptions);
 
         // 네이버로 처음 이동
-        driver.Navigate().GoToUrl("https://naver.com");
+        driver.Navigate().GoToUrl("https://moii-feed-agent-front.vercel.app/agents");
 
         var webController = new SeleniumWebController(driver);
 
@@ -26,7 +26,10 @@ class Program
             new ClickElementTool(webController, driver),
             new ClickImageTool(webController, driver),
             new InputTextTool(webController, driver),
-            new MoveMouseTool(webController, driver)
+            new MoveMouseTool(webController, driver),
+                new ScrollTool(webController, driver),
+                new CloseTabTool(webController),
+            new NavigateTool(webController)
             //new DragAndDropTool(webController)
         };
 
