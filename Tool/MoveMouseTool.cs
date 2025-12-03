@@ -5,15 +5,15 @@ namespace WebAgentCli;
 
 public class MoveMouseTool : IAgentTool
 {
-    private readonly IWebController _web;
+    private readonly IMouseController _mouse;
     private readonly IWebDriver _driver;
 
     public string Name => "MoveMouse";
     public string Description => "Moves the mouse cursor to a specific position or element. Args: 'x:100|y:200' for absolute coordinates, or 'selector:...' to move to an element.";
 
-    public MoveMouseTool(IWebController web, IWebDriver driver)
+    public MoveMouseTool(IMouseController mouse, IWebDriver driver)
     {
-        _web = web;
+        _mouse = mouse;
         _driver = driver;
     }
 
@@ -46,7 +46,7 @@ public class MoveMouseTool : IAgentTool
                     }
                 }
 
-                await _web.MoveMouseAsync(x, y);
+                await _mouse.MoveMouseAsync(x, y);
                 Console.WriteLine($"[MoveMouseTool] Mouse moved to ({x}, {y})");
                 return $"Mouse moved to ({x}, {y})";
             }
@@ -56,7 +56,7 @@ public class MoveMouseTool : IAgentTool
             {
                 var selector = query.Substring(9).Trim();
                 var element = _driver.FindElement(By.CssSelector(selector));
-                await _web.MoveMouseToElementAsync(element);
+                await _mouse.MoveMouseToElementAsync(element);
                 Console.WriteLine($"[MoveMouseTool] Mouse moved to element: {selector}");
                 return $"Mouse moved to element: {selector}";
             }

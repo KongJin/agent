@@ -23,6 +23,9 @@ class Program
         driver.Navigate().GoToUrl("https://moii-feed-agent-front.vercel.app/agents");
 
         var webController = new SeleniumWebController(driver);
+        var mouseController = new SeleniumMouseController(driver);
+        var inputController = new SeleniumInputController(driver);
+        var navigationController = new SeleniumNavigationController(driver);
 
         // 2. 툴 등록
         var tools = new IAgentTool[]
@@ -30,11 +33,11 @@ class Program
             new GetDomSummaryTool(webController),
             new ClickElementTool(webController, driver),
             new ClickImageTool(webController, driver),
-            new InputTextTool(new SeleniumInputController(driver), driver),
-            new MoveMouseTool(webController, driver),
-                new ScrollTool(webController, driver),
-                new CloseTabTool(webController),
-            new NavigateTool(webController)
+            new InputTextTool(inputController, driver),
+            new MoveMouseTool(mouseController, driver),
+                new ScrollTool(mouseController, driver),
+            new CloseTabTool(navigationController),
+            new NavigateTool(navigationController)
             //new DragAndDropTool(webController)
         };
 

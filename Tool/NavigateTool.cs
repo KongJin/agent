@@ -4,14 +4,14 @@ namespace WebAgentCli;
 
 public class NavigateTool : IAgentTool
 {
-    private readonly IWebController _web;
+    private readonly INavigationController _nav;
 
     public string Name => "Navigate";
     public string Description => "Navigate browser history. Args: 'back' or 'forward'.";
 
-    public NavigateTool(IWebController web)
+    public NavigateTool(INavigationController nav)
     {
-        _web = web;
+        _nav = nav;
     }
 
     public async Task<string> ExecuteAsync(string arguments)
@@ -19,12 +19,12 @@ public class NavigateTool : IAgentTool
         var arg = (arguments ?? "").Trim().ToLower();
         if (arg == "back")
         {
-            await _web.GoBackAsync();
+            await _nav.GoBackAsync();
             return "Navigated back";
         }
         else if (arg == "forward")
         {
-            await _web.GoForwardAsync();
+            await _nav.GoForwardAsync();
             return "Navigated forward";
         }
         else

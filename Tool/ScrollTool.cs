@@ -5,15 +5,15 @@ namespace WebAgentCli;
 
 public class ScrollTool : IAgentTool
 {
-    private readonly IWebController _web;
+    private readonly IMouseController _mouse;
     private readonly IWebDriver _driver;
 
     public string Name => "Scroll";
     public string Description => "Scrolls the page. Args: 'by:dx|dy' (e.g. 'by:0|500'), 'x:100|y:200', 'to:top', 'to:bottom', or 'selector:cssSelector'";
 
-    public ScrollTool(IWebController web, IWebDriver driver)
+    public ScrollTool(IMouseController mouse, IWebDriver driver)
     {
-        _web = web;
+        _mouse = mouse;
         _driver = driver;
     }
 
@@ -25,7 +25,7 @@ public class ScrollTool : IAgentTool
 
         try
         {
-            await _web.ScrollAsync(args);
+            await _mouse.ScrollAsync(args);
             return $"Scrolled with args: {args}";
         }
         catch (System.Exception ex)

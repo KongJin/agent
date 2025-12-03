@@ -48,3 +48,7 @@ TestResults
 .bak
 .swp
 .swo
+
+# Keep .env tracked (do not ignore)
+.env
+
