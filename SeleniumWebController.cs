@@ -11,6 +11,23 @@ public class SeleniumWebController : IWebController
 {
     private readonly IWebDriver _driver;
     private readonly WebDriverWait _wait;
+    public void TryAcceptAlertIfPresent()
+    {
+        try
+        {
+            var alert = _driver.SwitchTo().Alert();
+            alert.Accept();
+            Console.WriteLine("[SeleniumWebController] Browser alert accepted.");
+        }
+        catch (NoAlertPresentException)
+        {
+            // ignore
+        }
+        catch
+        {
+            // ignore
+        }
+    }
 
     public SeleniumWebController(IWebDriver driver, int timeoutSeconds = 10)
     {
@@ -20,6 +37,7 @@ public class SeleniumWebController : IWebController
 
     public Task ClickAsync(string cssSelector)
     {
+        TryAcceptAlertIfPresent();
         var element = _wait.Until(d => d.FindElement(By.CssSelector(cssSelector)));
 
         // Capture window handles before click
@@ -58,11 +76,13 @@ public class SeleniumWebController : IWebController
         }
         catch { }
 
+        TryAcceptAlertIfPresent();
         return Task.CompletedTask;
     }
 
     public Task ClickAsync(IWebElement element)
     {
+        TryAcceptAlertIfPresent();
         // capture window handles before click
         var beforeHandles = _driver.WindowHandles.ToList();
 
@@ -96,10 +116,12 @@ public class SeleniumWebController : IWebController
         }
         catch { }
 
+        TryAcceptAlertIfPresent();
         return Task.CompletedTask;
     }
     public async Task DragAndDropAsync(string sourceSelector, string targetSelector)
     {
+        TryAcceptAlertIfPresent();
         var source = _wait.Until(d => d.FindElement(By.CssSelector(sourceSelector)));
         var target = _wait.Until(d => d.FindElement(By.CssSelector(targetSelector)));
 
@@ -111,6 +133,7 @@ public class SeleniumWebController : IWebController
 
     public Task<string> GetDomSummaryAsync()
     {
+        TryAcceptAlertIfPresent();
         var sb = new StringBuilder();
 
         try
@@ -141,44 +164,24 @@ public class SeleniumWebController : IWebController
             catch { }
         }
 
-        // 클릭 가능한 요소들 (버튼, 링크, 이미지)
-        sb.AppendLine($"\n[Clickable Elements]");
+        // Clickable elements (summary only)
+        sb.AppendLine($"\n[\uD074\uB9AD \uAC00\uB2A5 \uC694\uC18C]");
         
-        // 버튼들
+        // Buttons
         var buttons = _driver.FindElements(By.TagName("button"));
-        sb.AppendLine($"[Buttons: {buttons.Count}]");
-        foreach (var btn in buttons.Take(15))
-        {
-            try
-            {
-                var text = btn.Text?.Trim() ?? "(empty)";
-                var id = btn.GetAttribute("id") ?? "";
-                var onclick = btn.GetAttribute("onclick") ?? "";
-                var cssClass = btn.GetAttribute("class") ?? "";
-                sb.AppendLine($"  [Button] text='{text}' id='{id}' class='{cssClass}'");
-            }
-            catch { }
-        }
+        var buttonTexts = buttons.Take(10)
+                                 .Select(b => b.Text?.Trim() ?? "")
+                                 .Where(t => !string.IsNullOrEmpty(t))
+                                 .ToList();
+        sb.AppendLine($"[\uBC84\uD2BC \uC218: {buttons.Count}] \uD14D\uC2A4\uD2B8='{string.Join(", ", buttonTexts)}'");
 
-        // 링크들
+        // Links
         var links = _driver.FindElements(By.TagName("a"));
-        sb.AppendLine($"[Links: {links.Count}]");
-        int linkCount = 0;
-        foreach (var a in links)
-        {
-            try
-            {
-                var text = a.Text?.Trim() ?? "";
-                var href = a.GetAttribute("href") ?? "";
-                var id = a.GetAttribute("id") ?? "";
-                if (!string.IsNullOrEmpty(text) && linkCount < 25)
-                {
-                    sb.AppendLine($"  [Link] text='{text}' href='{href}' id='{id}'");
-                    linkCount++;
-                }
-            }
-            catch { }
-        }
+        var linkTexts = links.Select(a => a.Text?.Trim() ?? "")
+                             .Where(t => !string.IsNullOrEmpty(t))
+                             .Take(10)
+                             .ToList();
+        sb.AppendLine($"[\uB9C1\uD06C \uC218: {links.Count}] \uD14D\uC2A4\uD2B8='{string.Join(", ", linkTexts)}'");
 
         // 숨겨진 '로그인' 텍스트를 가진 모든 요소 찾기
         try
@@ -233,6 +236,7 @@ public class SeleniumWebController : IWebController
 
     public Task InputTextAsync(string cssSelector, string text)
     {
+        TryAcceptAlertIfPresent();
         Console.WriteLine($"[SeleniumWebController.InputTextAsync] selector='{cssSelector}', text='{text}'");
         
         try
@@ -499,6 +503,7 @@ public class SeleniumWebController : IWebController
 
     public Task SendKeyAsync(string cssSelector, string key)
     {
+        TryAcceptAlertIfPresent();
         Console.WriteLine($"[SeleniumWebController.SendKeyAsync] selector='{cssSelector}', key='{key}'");
         
         var element = _wait.Until(d => d.FindElement(By.CssSelector(cssSelector)));
@@ -535,6 +540,7 @@ public class SeleniumWebController : IWebController
 
     public Task MoveMouseAsync(int x, int y)
     {
+        TryAcceptAlertIfPresent();
         Console.WriteLine($"[SeleniumWebController.MoveMouseAsync] Moving mouse to ({x}, {y})");
         
         try
@@ -553,6 +559,7 @@ public class SeleniumWebController : IWebController
 
     public Task MoveMouseToElementAsync(IWebElement element)
     {
+        TryAcceptAlertIfPresent();
         Console.WriteLine($"[SeleniumWebController.MoveMouseToElementAsync] Moving mouse to element");
         
         try
@@ -571,6 +578,7 @@ public class SeleniumWebController : IWebController
 
     public Task ScrollAsync(string arguments)
     {
+        TryAcceptAlertIfPresent();
         Console.WriteLine($"[SeleniumWebController.ScrollAsync] args='{arguments}'");
         try
         {
@@ -655,6 +663,7 @@ public class SeleniumWebController : IWebController
 
     public Task GoBackAsync()
     {
+        TryAcceptAlertIfPresent();
         Console.WriteLine("[SeleniumWebController.GoBackAsync] Navigating back");
         try
         {
@@ -681,6 +690,7 @@ public class SeleniumWebController : IWebController
 
     public Task GoForwardAsync()
     {
+        TryAcceptAlertIfPresent();
         Console.WriteLine("[SeleniumWebController.GoForwardAsync] Navigating forward");
         try
         {
@@ -706,6 +716,7 @@ public class SeleniumWebController : IWebController
 
     public Task CloseCurrentTabAsync()
     {
+        TryAcceptAlertIfPresent();
         Console.WriteLine("[SeleniumWebController.CloseCurrentTabAsync] Closing current tab/window");
         try
         {

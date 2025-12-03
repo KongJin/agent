@@ -1,3 +1,5 @@
+using System;
+using System.Linq;
 using System.Threading.Tasks;
 using OpenQA.Selenium;
 
@@ -22,9 +24,7 @@ public class InputTextTool : IAgentTool
         if (string.IsNullOrWhiteSpace(arguments))
             return "No arguments provided. Use 'fieldName|text' or 'selector:cssSelector|text'.";
 
-        // 인자 파싱: fieldName|text|enter=true 형식
         var parts = arguments.Split('|', 3);
-        
         if (parts.Length < 2)
             return "Invalid arguments. Use 'fieldName|text'.";
 
@@ -40,7 +40,7 @@ public class InputTextTool : IAgentTool
             IWebElement? element = null;
             string selector = "";
 
-            // CSS selector로 시작하면 직접 selector 사용
+            // direct CSS selector
             if (fieldQuery.StartsWith("selector:", StringComparison.OrdinalIgnoreCase))
             {
                 selector = fieldQuery.Substring(9).Trim();
@@ -49,27 +49,9 @@ public class InputTextTool : IAgentTool
             }
             else
             {
-                // 필드 이름으로 자동 검색 (빠른 방식)
-                element = FindInputFieldByQuery(_driver, fieldQuery);
+                (element, selector) = FindInputFieldByQuery(_driver, fieldQuery);
                 if (element != null)
                 {
-                    // 찾은 요소의 name이나 id로 selector 생성
-                    var name = element.GetAttribute("name");
-                    var id = element.GetAttribute("id");
-                    
-                    if (!string.IsNullOrEmpty(name))
-                    {
-                        selector = $"input[name='{name}']";
-                    }
-                    else if (!string.IsNullOrEmpty(id))
-                    {
-                        selector = $"#{id}";
-                    }
-                    else
-                    {
-                        selector = "input"; // fallback (shouldn't happen)
-                    }
-                    
                     Console.WriteLine($"[InputTextTool] Found element by field name: {fieldQuery}, selector: {selector}");
                 }
             }
@@ -79,13 +61,11 @@ public class InputTextTool : IAgentTool
                 return $"Input field not found for: '{fieldQuery}'. Try specifying the field more clearly.";
             }
 
-            // 텍스트 입력 (이미 찾은 element를 직접 사용)
             await _web.InputTextAsync(selector, text);
             Console.WriteLine($"[InputTextTool] Text input completed.");
-            
+
             if (sendEnter)
             {
-                // Enter 키를 별도로 전송
                 System.Threading.Thread.Sleep(200);
                 await _web.SendKeyAsync(selector, Keys.Enter);
                 Console.WriteLine($"[InputTextTool] Enter key sent.");
@@ -101,40 +81,79 @@ public class InputTextTool : IAgentTool
     }
 
     /// <summary>
-    /// 필드 쿼리(이름)를 기반으로 입력 필드를 찾습니다.
-    /// placeholder, name, id, aria-label에서 찾습니다.
+    /// Find an input-like element by query using label-first heuristics, then scoring across id/name/placeholder/aria/labels/nearby text.
     /// </summary>
-    private IWebElement? FindInputFieldByQuery(IWebDriver driver, string query)
+    private (IWebElement? element, string selector) FindInputFieldByQuery(IWebDriver driver, string query)
     {
         try
         {
             var inputs = driver.FindElements(By.TagName("input"));
             var textareas = driver.FindElements(By.TagName("textarea"));
+            var labels = driver.FindElements(By.TagName("label"));
             var allInputs = inputs.Concat(textareas).ToList();
+
+            var queryNorm = (query ?? string.Empty).Trim().ToLowerInvariant();
+            IWebElement? best = null;
+            string bestSelector = "";
+            int bestScore = -1;
+
+        // Step 1: label-first exact/contains
+        foreach (var label in labels)
+        {
+            var labelText = (label.Text ?? "").Trim();
+            var labelNorm = labelText.ToLowerInvariant();
+            if (string.IsNullOrEmpty(labelNorm)) continue;
+            var exactLabel = labelNorm.Equals(queryNorm, StringComparison.OrdinalIgnoreCase);
+            if (!exactLabel && !labelNorm.Contains(queryNorm) && !queryNorm.Contains(labelNorm)) continue;
+
+            var forId = label.GetAttribute("for");
+            if (!string.IsNullOrEmpty(forId))
+            {
+                try
+                {
+                    var target = driver.FindElement(By.Id(forId));
+                    return (target, $"#{forId}");
+                }
+                catch { }
+            }
+
+            try
+            {
+                var candidate = label.FindElements(By.XPath("following::input[1] | following::textarea[1]")).FirstOrDefault();
+                if (candidate != null)
+                {
+                    return (candidate, BuildSelector(candidate));
+                }
+            }
+            catch { }
+        }
+
+            int ScoreText(string source, int exactScore = 100, int containsScore = 70)
+            {
+                if (string.IsNullOrEmpty(source)) return 0;
+                var norm = source.Trim().ToLowerInvariant();
+                if (norm == queryNorm) return exactScore;
+                if (norm.Contains(queryNorm)) return containsScore;
+                return 0;
+            }
 
             foreach (var input in allInputs)
             {
-                // placeholder 확인
+                var score = 0;
+
                 var placeholder = input.GetAttribute("placeholder") ?? "";
-                if (placeholder.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0)
-                    return input;
+                score = Math.Max(score, ScoreText(placeholder, 95, 65));
 
-                // name 확인
                 var name = input.GetAttribute("name") ?? "";
-                if (name.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0)
-                    return input;
+                score = Math.Max(score, ScoreText(name, 95, 65));
 
-                // id 확인
                 var id = input.GetAttribute("id") ?? "";
-                if (id.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0)
-                    return input;
+                score = Math.Max(score, ScoreText(id, 100, 70));
 
-                // aria-label 확인
                 var ariaLabel = input.GetAttribute("aria-label") ?? "";
-                if (ariaLabel.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0)
-                    return input;
+                score = Math.Max(score, ScoreText(ariaLabel, 95, 65));
 
-                // 관련 라벨 찾기 (label 요소와 연결된 경우)
+                // label[for=id]
                 var labelFor = input.GetAttribute("id");
                 if (!string.IsNullOrEmpty(labelFor))
                 {
@@ -142,19 +161,80 @@ public class InputTextTool : IAgentTool
                     {
                         var label = driver.FindElement(By.CssSelector($"label[for='{labelFor}']"));
                         var labelText = label.Text ?? "";
-                        if (labelText.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0)
-                            return input;
+                        score = Math.Max(score, ScoreText(labelText, 105, 80));
                     }
                     catch { }
                 }
+
+                // immediately previous sibling text
+                try
+                {
+                    var prevSibling = input.FindElements(By.XPath("preceding-sibling::*[1]")).FirstOrDefault();
+                    if (prevSibling != null)
+                    {
+                        var prevText = prevSibling.Text ?? "";
+                        score = Math.Max(score, ScoreText(prevText, 90, 70));
+                    }
+                }
+                catch { }
+
+                // nearest previous label (without for)
+                try
+                {
+                    var nearbyLabel = input.FindElements(By.XPath("preceding::label[1]")).FirstOrDefault();
+                    if (nearbyLabel != null)
+                    {
+                        var nearbyText = nearbyLabel.Text ?? "";
+                        score = Math.Max(score, ScoreText(nearbyText, 90, 70));
+                    }
+                }
+                catch { }
+
+                // prefer empty fields and textareas slightly to avoid overwriting filled fields and to target long-form inputs
+                var currentVal = input.GetAttribute("value") ?? "";
+                if (string.Equals(input.TagName, "textarea", StringComparison.OrdinalIgnoreCase))
+                {
+                    score += 3;
+                    currentVal = input.Text ?? currentVal;
+                }
+                if (string.IsNullOrEmpty(currentVal))
+                {
+                    score += 5;
+                }
+
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    best = input;
+                    bestSelector = BuildSelector(input);
+                }
             }
 
-            return null;
+            return (best, bestSelector);
         }
         catch (Exception ex)
         {
             Console.WriteLine($"[InputTextTool] Error finding input field: {ex.Message}");
-            return null;
+            return (null, "");
         }
+    }
+
+    private string BuildSelector(IWebElement element)
+    {
+        var tag = element.TagName.ToLowerInvariant();
+        var id = element.GetAttribute("id") ?? "";
+        var name = element.GetAttribute("name") ?? "";
+        var placeholder = element.GetAttribute("placeholder") ?? "";
+
+        if (!string.IsNullOrEmpty(id))
+            return $"#{id}";
+        if (!string.IsNullOrEmpty(name))
+            return $"{tag}[name='{name}']";
+        if (!string.IsNullOrEmpty(placeholder))
+        {
+            var shortened = placeholder.Length > 20 ? placeholder.Substring(0, 20) : placeholder;
+            return $"{tag}[placeholder*='{shortened}']";
+        }
+        return tag;
     }
 }

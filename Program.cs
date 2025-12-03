@@ -11,6 +11,12 @@ class Program
         // 1. Selenium WebDriver 준비 (한 번만 초기화)
         var chromeOptions = new ChromeOptions();
         chromeOptions.AddArgument("--start-maximized");
+        // 권한 팝업을 미리 허용/무시하도록 설정
+        chromeOptions.AddUserProfilePreference("profile.default_content_setting_values.notifications", 1);
+        chromeOptions.AddUserProfilePreference("profile.default_content_setting_values.geolocation", 1);
+        chromeOptions.AddUserProfilePreference("profile.default_content_setting_values.media_stream_mic", 1);
+        chromeOptions.AddUserProfilePreference("profile.default_content_setting_values.media_stream_camera", 1);
+        chromeOptions.AddUserProfilePreference("profile.default_content_setting_values.media_stream", 1);
 
         using IWebDriver driver = new ChromeDriver(chromeOptions);
 
@@ -39,14 +45,6 @@ class Program
 
         // 4. 에이전트 반복 루프: 사용자가 "exit" 또는 "종료"를 입력할 때까지 계속
         var agent = new Agent(llmClient, tools);
-        
-        // 처음 한 번 페이지 정보를 출력해서 사용자가 선택할 수 있게 함
-        Console.WriteLine("\n[초기화] 페이지 정보를 로드합니다...");
-        var getDomTool = new GetDomSummaryTool(webController);
-        var pageSummary = await getDomTool.ExecuteAsync("");
-        Console.WriteLine("\n========== 현재 페이지 정보 ==========");
-        Console.WriteLine(pageSummary);
-        Console.WriteLine("=====================================\n");
         
         while (true)
         {
@@ -80,13 +78,6 @@ class Program
             await agent.RunAsync(userGoal);
 
             Console.WriteLine("[완료] 작업이 완료되었습니다.");
-            
-            // 작업 후 페이지 정보 업데이트
-            Console.WriteLine("\n[정보 업데이트] 페이지 상태를 갱신합니다...");
-            pageSummary = await getDomTool.ExecuteAsync("");
-            Console.WriteLine("\n========== 현재 페이지 정보 ==========");
-            Console.WriteLine(pageSummary);
-            Console.WriteLine("=====================================\n");
         }
         
         Console.WriteLine("브라우저를 종료합니다.");

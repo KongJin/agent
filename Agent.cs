@@ -23,14 +23,13 @@ namespace WebAgentCli
             var context = "";
             bool hasDomSummary = false;
             string? lastToolAction = null; // remember last "tool||args" to detect identical repeated actions
+            const int maxCallsPerTool = 30;
             var toolCallCounts = new Dictionary<string,int>(StringComparer.OrdinalIgnoreCase);
 
             for (int step = 0; step < 10; step++) // limit to 10 steps
             {
                 var userPrompt = BuildUserPrompt(userGoal, context, hasDomSummary);
                 var llmResponse = await _llm.ChatAsync(systemPrompt, userPrompt);
-
-                Console.WriteLine($"[LLM raw] {llmResponse}");
 
                 AgentAction action;
                 try
@@ -62,7 +61,7 @@ namespace WebAgentCli
                 {
                     if (!toolCallCounts.ContainsKey(action.tool)) toolCallCounts[action.tool] = 0;
                     toolCallCounts[action.tool]++;
-                    if (toolCallCounts[action.tool] > 5)
+                    if (toolCallCounts[action.tool] > maxCallsPerTool)
                     {
                         Console.WriteLine($"[Agent] Tool '{action.tool}' called too many times: {toolCallCounts[action.tool]}");
                         break;
