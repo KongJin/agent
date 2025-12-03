@@ -11,33 +11,18 @@ public class SeleniumWebController : IWebController
 {
     private readonly IWebDriver _driver;
     private readonly WebDriverWait _wait;
-    public void TryAcceptAlertIfPresent()
-    {
-        try
-        {
-            var alert = _driver.SwitchTo().Alert();
-            alert.Accept();
-            Console.WriteLine("[SeleniumWebController] Browser alert accepted.");
-        }
-        catch (NoAlertPresentException)
-        {
-            // ignore
-        }
-        catch
-        {
-            // ignore
-        }
-    }
+    private readonly IAlertHandler _alertHandler;
 
-    public SeleniumWebController(IWebDriver driver, int timeoutSeconds = 10)
+    public SeleniumWebController(IWebDriver driver, IAlertHandler alertHandler, int timeoutSeconds = 10)
     {
         _driver = driver;
+        _alertHandler = alertHandler;
         _wait = new WebDriverWait(new SystemClock(), _driver, TimeSpan.FromSeconds(timeoutSeconds), TimeSpan.FromMilliseconds(500));
     }
 
     public Task ClickAsync(string cssSelector)
     {
-        TryAcceptAlertIfPresent();
+        _alertHandler.TryAcceptIfPresent();
         var element = _wait.Until(d => d.FindElement(By.CssSelector(cssSelector)));
 
         // Capture window handles before click
@@ -76,13 +61,13 @@ public class SeleniumWebController : IWebController
         }
         catch { }
 
-        TryAcceptAlertIfPresent();
+        _alertHandler.TryAcceptIfPresent();
         return Task.CompletedTask;
     }
 
     public Task ClickAsync(IWebElement element)
     {
-        TryAcceptAlertIfPresent();
+        _alertHandler.TryAcceptIfPresent();
         // capture window handles before click
         var beforeHandles = _driver.WindowHandles.ToList();
 
@@ -116,12 +101,12 @@ public class SeleniumWebController : IWebController
         }
         catch { }
 
-        TryAcceptAlertIfPresent();
+        _alertHandler.TryAcceptIfPresent();
         return Task.CompletedTask;
     }
     public async Task DragAndDropAsync(string sourceSelector, string targetSelector)
     {
-        TryAcceptAlertIfPresent();
+        _alertHandler.TryAcceptIfPresent();
         var source = _wait.Until(d => d.FindElement(By.CssSelector(sourceSelector)));
         var target = _wait.Until(d => d.FindElement(By.CssSelector(targetSelector)));
 
@@ -133,7 +118,7 @@ public class SeleniumWebController : IWebController
 
     public Task<string> GetDomSummaryAsync()
     {
-        TryAcceptAlertIfPresent();
+        _alertHandler.TryAcceptIfPresent();
         var sb = new StringBuilder();
 
         try
@@ -236,7 +221,7 @@ public class SeleniumWebController : IWebController
 
     public Task InputTextAsync(string cssSelector, string text)
     {
-        TryAcceptAlertIfPresent();
+        _alertHandler.TryAcceptIfPresent();
         Console.WriteLine($"[SeleniumWebController.InputTextAsync] selector='{cssSelector}', text='{text}'");
         
         try
@@ -503,7 +488,7 @@ public class SeleniumWebController : IWebController
 
     public Task SendKeyAsync(string cssSelector, string key)
     {
-        TryAcceptAlertIfPresent();
+        _alertHandler.TryAcceptIfPresent();
         Console.WriteLine($"[SeleniumWebController.SendKeyAsync] selector='{cssSelector}', key='{key}'");
         
         var element = _wait.Until(d => d.FindElement(By.CssSelector(cssSelector)));
@@ -540,7 +525,7 @@ public class SeleniumWebController : IWebController
 
     public Task MoveMouseAsync(int x, int y)
     {
-        TryAcceptAlertIfPresent();
+        _alertHandler.TryAcceptIfPresent();
         Console.WriteLine($"[SeleniumWebController.MoveMouseAsync] Moving mouse to ({x}, {y})");
         
         try
@@ -559,7 +544,7 @@ public class SeleniumWebController : IWebController
 
     public Task MoveMouseToElementAsync(IWebElement element)
     {
-        TryAcceptAlertIfPresent();
+        _alertHandler.TryAcceptIfPresent();
         Console.WriteLine($"[SeleniumWebController.MoveMouseToElementAsync] Moving mouse to element");
         
         try
@@ -578,7 +563,7 @@ public class SeleniumWebController : IWebController
 
     public Task ScrollAsync(string arguments)
     {
-        TryAcceptAlertIfPresent();
+        _alertHandler.TryAcceptIfPresent();
         Console.WriteLine($"[SeleniumWebController.ScrollAsync] args='{arguments}'");
         try
         {
@@ -663,7 +648,7 @@ public class SeleniumWebController : IWebController
 
     public Task GoBackAsync()
     {
-        TryAcceptAlertIfPresent();
+        _alertHandler.TryAcceptIfPresent();
         Console.WriteLine("[SeleniumWebController.GoBackAsync] Navigating back");
         try
         {
@@ -690,7 +675,7 @@ public class SeleniumWebController : IWebController
 
     public Task GoForwardAsync()
     {
-        TryAcceptAlertIfPresent();
+        _alertHandler.TryAcceptIfPresent();
         Console.WriteLine("[SeleniumWebController.GoForwardAsync] Navigating forward");
         try
         {
@@ -716,7 +701,7 @@ public class SeleniumWebController : IWebController
 
     public Task CloseCurrentTabAsync()
     {
-        TryAcceptAlertIfPresent();
+        _alertHandler.TryAcceptIfPresent();
         Console.WriteLine("[SeleniumWebController.CloseCurrentTabAsync] Closing current tab/window");
         try
         {

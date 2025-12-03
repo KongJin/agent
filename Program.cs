@@ -23,7 +23,8 @@ class Program
         // 네이버로 처음 이동
         driver.Navigate().GoToUrl("https://moii-feed-agent-front.vercel.app/agents");
 
-        var webController = new SeleniumWebController(driver);
+        var alertHandler = new AlertHandler(driver);
+        var webController = new SeleniumWebController(driver, alertHandler);
 
         // 2. 툴 등록
         var tools = new IAgentTool[]
