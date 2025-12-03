@@ -2,12 +2,12 @@
 
 public class DragAndDropTool : IAgentTool
 {
-    private readonly IWebController _web;
+    private readonly IInputController _web;
 
     public string Name => "DragAndDrop";
     public string Description => "Drags from one CSS selector to another.";
 
-    public DragAndDropTool(IWebController web)
+    public DragAndDropTool(IInputController web)
     {
         _web = web;
     }

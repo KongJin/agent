@@ -20,11 +20,9 @@ class Program
 
         using IWebDriver driver = new ChromeDriver(chromeOptions);
 
-        // 네이버로 처음 이동
         driver.Navigate().GoToUrl("https://moii-feed-agent-front.vercel.app/agents");
 
-        var alertHandler = new AlertHandler(driver);
-        var webController = new SeleniumWebController(driver, alertHandler);
+        var webController = new SeleniumWebController(driver);
 
         // 2. 툴 등록
         var tools = new IAgentTool[]
@@ -32,7 +30,7 @@ class Program
             new GetDomSummaryTool(webController),
             new ClickElementTool(webController, driver),
             new ClickImageTool(webController, driver),
-            new InputTextTool(webController, driver),
+            new InputTextTool(new SeleniumInputController(driver), driver),
             new MoveMouseTool(webController, driver),
                 new ScrollTool(webController, driver),
                 new CloseTabTool(webController),

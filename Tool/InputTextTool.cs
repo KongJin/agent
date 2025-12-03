@@ -7,13 +7,13 @@ namespace WebAgentCli;
 
 public class InputTextTool : IAgentTool
 {
-    private readonly IWebController _web;
+    private readonly IInputController _web;
     private readonly IWebDriver _driver;
 
     public string Name => "InputText";
     public string Description => "Inputs text into an element. Args: 'fieldName|text' to find field by label/placeholder, or 'selector:...|text' for direct CSS selector.";
 
-    public InputTextTool(IWebController web, IWebDriver driver)
+    public InputTextTool(IInputController web, IWebDriver driver)
     {
         _web = web;
         _driver = driver;
